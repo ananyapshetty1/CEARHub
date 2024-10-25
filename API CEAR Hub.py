@@ -1,10 +1,10 @@
-
-
 from datetime import *
 import calendar
 import requests as r
 
 
+adict = {}
+locDict = {}
 active_sensors_within_past_day = []
 weird_sensors_within_past_day = []
 base_url = "https://api.sealevelsensors.org/v1.0/Things"
@@ -19,13 +19,15 @@ for index in range(len(thing_data['value'])):
         datastream = r.get(item["Datastreams@iot.navigationLink"])
         datastream_data = datastream.json()
         now = datetime.now(timezone.utc)
-        yest = (now - timedelta(days = 1)).strftime('%Y-%m-%d')
+        tmrw = (now + timedelta(days = 1)).strftime('%Y-%m-%d')
         now = now.strftime('%Y-%m-%d')
         ind = 0
         for i in range(len(datastream_data['value'])):
             if datastream_data['value'][i]['name'] == "Water Level":
                 ind = i
-        water_level_url = datastream_data['value'][ind]["Observations@iot.navigationLink"] + "?$filter=phenomenonTime%20ge%20" + yest + "T00:00:00.000Z%20and%20phenomenonTime%20le%20" + now + "T00:00:00.000Z"
+        coordinates = datastream_data['value'][ind]['observedArea']['coordinates']
+        locDict[name_of_thing] = coordinates
+        water_level_url = datastream_data['value'][ind]["Observations@iot.navigationLink"] + "?$filter=phenomenonTime%20ge%20" + now + "T00:00:00.000Z%20and%20phenomenonTime%20le%20" + tmrw + "T00:00:00.000Z"
         water_level = r.get(water_level_url)
         past_day_water_level_data = water_level.json()
         num = past_day_water_level_data['@iot.count']
@@ -38,27 +40,61 @@ for index in range(len(thing_data['value'])):
                 past_day_water_level_data = r.get(past_day_water_level_data['@iot.nextLink']).json()
                 num -= 100
             last_data_point = past_day_water_level_data['value'][num - 1]
-            # print(name_of_thing)
-            # print(last_data_point)
-print(f"weird: {weird_sensors_within_past_day}")
-print(f"active: {active_sensors_within_past_day}")
+            adict[name_of_thing] = last_data_point
 
-'''
 
-#assuming that the timing gap is meant to be every day
-def timingTest(name, data):
-    string_data_time = data['resultTime']
-    string_data_time = string_data_time.replace("Z", "+00:00")  # Replace Z with +00:00 for UTC
-    datetime_obj = datetime.fromisoformat(string_data_time)
+
+def timingTest(name):
+    last_data_point = adict[name]
+    phenomTime = last_data_point['phenomenonTime']
+    date = datetime.strptime(phenomTime, '%Y-%m-%dT%H:%M:%S.%fZ')
     now = datetime.now(timezone.utc)
-    yesterday = (now - timedelta(days = 1))
-    print(yesterday)
-    if datetime_obj < yesterday:
+    six_ago = (now - timedelta(minutes = 6))
+    date_str = date.isoformat()
+    six_ago_str = six_ago.isoformat()
+    if six_ago_str > date_str:
         print(f"Timing Test Failed for {name}")
     else:
         print(f"Timing Test Passed for {name}")
 
-timingTest(name_of_thing, first_sensor_data)
+for i in active_sensors_within_past_day:
+    timingTest(i)
+for i in weird_sensors_within_past_day:
+    print(f"No data since midnight for {i}")
+
+def locationTest(name):
+    last_data_point = adict[name]
+    coordinate_link = r.get(last_data_point['FeatureOfInterest@iot.navigationLink'])
+    coords = coordinate_link.json()
+    coordinates = coords['feature']['coordinates']
+    if coordinates != locDict[name]:
+        print(f"Location Test Failed for {name}")
+    else:
+        print(f"Location Test Passed for {name}")
+    
+'''
+
+def grossRangeTest(name):
+    last_data_point = adict[name]
+    result = float(last_data_point['result'])
+    if result > 1.0 or result < -1.0:
+        print(f"Gross Range Test Failed for {name}")
+    else:
+        print(f"Gross Range Test Passed for {name}")
+
+
+
+
+def climatologyTest(name):
+    seasonDict = {}
+    last_data_point = adict[name]
+    result = float(last_data_point['result'])
+    if result > 1.0 or result < -1.0:
+        print(f"Gross Range Test Failed for {name}")
+    else:
+        print(f"Gross Range Test Passed for {name}")
+
+
 
 def syntaxTest(name, data):
     if data['@iot.selfLink'][:32] != "https://api.sealevelsensors.org/":
@@ -101,4 +137,6 @@ for link in links_list:
 print(recent_url)
 
 '''
+
+
 
